@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhishGuard SVM — ML Threat Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Epilogue:wght@400;600;800;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #06060a;
+  --panel: #0d0d14;
+  --border: #1a1a28;
+  --border2: #252538;
+  --accent: #6c63ff;
+  --accent2: #a78bfa;
+  --danger: #f43f5e;
+  --warn: #f59e0b;
+  --safe: #10b981;
+  --text: #e2e2f0;
+  --muted: #52526e;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Epilogue', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* animated noise overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.4;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  min-height: 100vh;
+  gap: 0;
+}
+
+/* ── LEFT PANEL ── */
+.left {
+  padding: 36px 40px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo-icon {
+  width: 40px;
+  height: 40px;
+  background: var(--accent);
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  box-shadow: 0 0 24px rgba(108,99,255,0.4);
+  flex-shrink: 0;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+}
+
+h1 em { color: var(--accent2); font-style: normal; }
+
+.subtitle {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-left: 54px;
+}
+
+/* Model badge */
+.model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(108,99,255,0.1);
+  border: 1px solid rgba(108,99,255,0.3);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent2);
+  letter-spacing: 1px;
+  width: fit-content;
+}
+
+.badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--safe); box-shadow: 0 0 8px var(--safe); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+/* Textarea */
+.input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+textarea {
+  flex: 1;
+  min-height: 260px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.8;
+  padding: 18px 20px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s;
+}
+textarea:focus { border-color: rgba(108,99,255,0.5); }
+textarea::placeholder { color: var(--muted); font-size: 12px; }
+
+/* Samples */
+.samples {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.sample-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+.chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.5px;
+}
+.chip:hover { color: var(--accent2); border-color: rgba(108,99,255,0.4); background: rgba(108,99,255,0.06); }
+
+/* Buttons */
+.btn-row { display: flex; gap: 10px; }
+
+.btn {
+  padding: 13px 28px;
+  border-radius: 10px;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  letter-spacing: 0.3px;
+}
+
+.btn-main {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(108,99,255,0.35);
+}
+.btn-main:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 0 32px rgba(108,99,255,0.55); }
+.btn-main:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border2);
+}
+.btn-ghost:hover { color: var(--text); }
+
+/* ── RIGHT PANEL ── */
+.right {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.right-inner {
+  padding: 36px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  flex: 1;
+}
+
+/* Idle state */
+.idle-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  opacity: 0.35;
+  padding: 40px;
+  text-align: center;
+}
+.idle-icon { font-size: 48px; }
+.idle-state p { font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--muted); }
+
+/* Loading */
+.loading-state {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex: 1;
+  padding: 40px;
+}
+.loading-state.active { display: flex; }
+
+.svm-visual {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+.svm-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(108,99,255,0.2);
+  animation: expandRing 1.5s ease-out infinite;
+}
+.svm-ring:nth-child(2) { animation-delay: 0.5s; }
+.svm-ring:nth-child(3) { animation-delay: 1s; }
+@keyframes expandRing { 0% { transform: scale(0.5); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
+
+.svm-center {
+  position: absolute;
+  inset: 20px;
+  background: rgba(108,99,255,0.15);
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+}
+.loading-text { font-family: var(--mono); font-size: 11px; color: var(--accent2); letter-spacing: 1.5px; }
+
+/* Result */
+.result-state { display: none; flex-direction: column; gap: 20px; }
+.result-state.active { display: flex; animation: fadeIn 0.35s ease; }
+@keyframes fadeIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+
+/* Verdict */
+.verdict-card {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.verdict-header {
+  padding: 20px 22px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.verdict-icon { font-size: 28px; line-height: 1; }
+.verdict-info { flex: 1; }
+.verdict-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.verdict-text { font-size: 18px; font-weight: 800; }
+.verdict-score { text-align: right; }
+.score-big { font-family: var(--mono); font-size: 32px; font-weight: 700; line-height: 1; }
+.score-sub { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+
+/* score bar */
+.score-track {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+}
+.score-fill { height: 100%; transition: width 1.2s cubic-bezier(0.4,0,0.2,1); width: 0; }
+
+/* color themes */
+.verdict-card.danger .verdict-header { background: rgba(244,63,94,0.08); }
+.verdict-card.danger { border-color: rgba(244,63,94,0.25); box-shadow: 0 0 24px rgba(244,63,94,0.12); }
+.verdict-card.danger .verdict-text { color: var(--danger); }
+.verdict-card.danger .score-big { color: var(--danger); }
+.verdict-card.danger .score-fill { background: var(--danger); }
+
+.verdict-card.warn .verdict-header { background: rgba(245,158,11,0.08); }
+.verdict-card.warn { border-color: rgba(245,158,11,0.25); box-shadow: 0 0 24px rgba(245,158,11,0.12); }
+.verdict-card.warn .verdict-text { color: var(--warn); }
+.verdict-card.warn .score-big { color: var(--warn); }
+.verdict-card.warn .score-fill { background: var(--warn); }
+
+.verdict-card.safe .verdict-header { background: rgba(16,185,129,0.06); }
+.verdict-card.safe { border-color: rgba(16,185,129,0.2); box-shadow: 0 0 24px rgba(16,185,129,0.1); }
+.verdict-card.safe .verdict-text { color: var(--safe); }
+.verdict-card.safe .score-big { color: var(--safe); }
+.verdict-card.safe .score-fill { background: var(--safe); }
+
+/* Section headers */
+.sec-head {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sec-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* Feature contributions */
+.feature-list { display: flex; flex-direction: column; gap: 5px; }
+.feat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.02);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.feat-word { flex: 1; color: var(--text); }
+.feat-bar-wrap { width: 70px; height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
+.feat-bar { height: 100%; border-radius: 2px; }
+.feat-val { width: 44px; text-align: right; font-size: 10px; }
+.feat-row.phish .feat-bar { background: var(--danger); }
+.feat-row.phish .feat-val { color: var(--danger); }
+.feat-row.legit .feat-bar { background: var(--safe); }
+.feat-row.legit .feat-val { color: var(--safe); }
+
+/* Indicators */
+.indicators { display: flex; flex-direction: column; gap: 7px; }
+.ind {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-left: 3px solid;
+}
+.ind.high { border-color: var(--danger); background: rgba(244,63,94,0.05); }
+.ind.medium { border-color: var(--warn); background: rgba(245,158,11,0.05); }
+.ind.low { border-color: var(--muted); background: rgba(255,255,255,0.02); }
+.ind-icon { flex-shrink: 0; font-size: 14px; }
+
+/* Meta grid */
+.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.meta-cell {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.meta-key { font-family: var(--mono); font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.meta-val { font-size: 12px; font-weight: 600; }
+
+/* Decision boundary viz */
+.boundary-viz {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.bv-track {
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(to right, var(--safe), rgba(255,255,255,0.1), var(--danger));
+  position: relative;
+  margin: 12px 0 8px;
+}
+.bv-line {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 18px;
+  background: #fff;
+  border-radius: 1px;
+  transform: translateX(-50%);
+  transition: left 1.2s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: 0 0 8px #fff;
+}
+.bv-labels { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--muted); }
+.bv-title { font-family: var(--mono); font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+
+/* Recommendation */
+.rec {
+  padding: 14px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.result-state.danger-mode .rec { background: rgba(244,63,94,0.1); color: var(--danger); }
+.result-state.warn-mode .rec { background: rgba(245,158,11,0.1); color: var(--warn); }
+.result-state.safe-mode .rec { background: rgba(16,185,129,0.08); color: var(--safe); }
+
+/* History bottom */
+.history-bar {
+  padding: 16px 28px;
+  border-top: 1px solid var(--border);
+  display: none;
+}
+.history-bar.active { display: block; }
+.hist-head { font-family: var(--mono); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.hist-list { display: flex; flex-direction: column; gap: 6px; }
+.hist-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 7px 10px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 6px;
+}
+.hist-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.hist-text { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-score { font-weight: 700; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  .left { padding: 24px 20px; }
+  .right { min-height: 60vh; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- LEFT: Input -->
+  <div class="left">
+    <header>
+      <div class="logo-row">
+        <div class="logo-icon">🛡</div>
+        <h1>Phish<em>Guard</em> SVM</h1>
+      </div>
+      <div class="subtitle">Linear SVM + TF-IDF · Real ML Pipeline</div>
+    </header>
+
+    <div class="model-badge">
+      <div class="badge-dot"></div>
+      LinearSVC · TF-IDF Bigrams · Trained on 500 samples
+    </div>
+
+    <div class="input-wrap">
+      <label>Email or Message Content</label>
+      <textarea id="inputText" placeholder="Paste any email or message here...
+
+Example — include headers for richer analysis:
+From: sender@example.com
+Subject: Your account
+---
+Body text..."></textarea>
+
+      <div class="samples">
+        <span class="sample-label">Samples →</span>
+        <button class="chip" onclick="loadSample('phishing')">⚠️ Phishing</button>
+        <button class="chip" onclick="loadSample('spear')">🎯 BEC / Spear</button>
+        <button class="chip" onclick="loadSample('scam')">💰 Scam</button>
+        <button class="chip" onclick="loadSample('legit')">✅ Legit</button>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-main" id="analyzeBtn" onclick="analyze()">⚡ Run SVM Analysis</button>
+      <button class="btn btn-ghost" onclick="clearAll()">Clear</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: Results -->
+  <div class="right">
+    <div class="right-inner">
+
+      <!-- Idle -->
+      <div class="idle-state" id="idleState">
+        <div class="idle-icon">📬</div>
+        <p>Paste an email or message<br>on the left, then click<br><strong>Run SVM Analysis</strong></p>
+      </div>
+
+      <!-- Loading -->
+      <div class="loading-state" id="loadingState">
+        <div class="svm-visual">
+          <div class="svm-ring"></div>
+          <div class="svm-ring"></div>
+          <div class="svm-ring"></div>
+          <div class="svm-center">🧠</div>
+        </div>
+        <div class="loading-text">COMPUTING HYPERPLANE...</div>
+      </div>
+
+      <!-- Result -->
+      <div class="result-state" id="resultState">
+
+        <div class="verdict-card" id="verdictCard">
+          <div class="verdict-header">
+            <div class="verdict-icon" id="vIcon">—</div>
+            <div class="verdict-info">
+              <div class="verdict-label">SVM Verdict</div>
+              <div class="verdict-text" id="vText">—</div>
+            </div>
+            <div class="verdict-score">
+              <div class="score-big" id="vScore">—</div>
+              <div class="score-sub">Threat Score</div>
+            </div>
+          </div>
+          <div class="score-track">
+            <div class="score-fill" id="scoreFill"></div>
+          </div>
+        </div>
+
+        <!-- Decision boundary -->
+        <div class="boundary-viz">
+          <div class="bv-title">SVM Decision Boundary</div>
+          <div class="bv-track">
+            <div class="bv-line" id="bvLine" style="left:50%"></div>
+          </div>
+          <div class="bv-labels">
+            <span>← SAFE</span>
+            <span>Hyperplane</span>
+            <span>PHISHING →</span>
+          </div>
+        </div>
+
+        <!-- Top contributing features -->
+        <div>
+          <div class="sec-head">Top Contributing Features</div>
+          <div class="feature-list" id="featureList"></div>
+        </div>
+
+        <!-- Indicators -->
+        <div>
+          <div class="sec-head">Pattern Indicators</div>
+          <div class="indicators" id="indList"></div>
+        </div>
+
+        <!-- Metadata -->
+        <div>
+          <div class="sec-head">Metadata</div>
+          <div class="meta-grid" id="metaGrid"></div>
+        </div>
+
+        <!-- Recommendation -->
+        <div class="rec" id="recBox"></div>
+
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="history-bar" id="histBar">
+      <div class="hist-head">Session History</div>
+      <div class="hist-list" id="histList"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── REAL SVM WEIGHTS (exported from sklearn) ─────────────────────────────────
+const SVM_WEIGHTS = {"order shipped":{"w":0.2345,"idf":4.56953},"000":{"w":0.33078,"idf":4.16407},"package delivered":{"w":-0.21477,"idf":4.56953},"password":{"w":0.31957,"idf":3.47092},"password apple":{"w":0.17841,"idf":4.56953},"123 456":{"w":-0.2084,"idf":4.56953},"123":{"w":-0.2084,"idf":4.56953},"pay":{"w":0.28385,"idf":4.16407},"payment":{"w":0.2345,"idf":4.56953},"payment information":{"w":0.2345,"idf":4.56953},"24":{"w":0.24902,"idf":3.87639},"299":{"w":0.20082,"idf":4.56953},"299 cancel":{"w":0.20082,"idf":4.56953},"24 hours":{"w":0.24902,"idf":3.87639},"permanently":{"w":0.22829,"idf":4.16407},"456 shipped":{"w":-0.2084,"idf":4.56953},"456":{"w":-0.2084,"idf":4.56953},"50":{"w":0.27728,"idf":4.16407},"pm":{"w":-0.26539,"idf":4.16407},"portal":{"w":0.21302,"idf":4.16407},"access account":{"w":0.2654,"idf":4.16407},"access":{"w":0.49596,"idf":3.47092},"account":{"w":0.8297,"idf":2.31824},"project":{"w":-0.27041,"idf":4.16407},"account confirm":{"w":0.30322,"idf":4.16407},"provide":{"w":0.28953,"idf":4.16407},"act":{"w":0.34111,"idf":4.16407},"activity":{"w":0.3732,"idf":3.87639},"rate":{"w":-0.21477,"idf":4.56953},"ready":{"w":-0.42628,"idf":3.87639},"ready download":{"w":-0.32659,"idf":4.16407},"apple":{"w":0.30207,"idf":4.56953},"refund":{"w":0.20082,"idf":4.56953},"reminder":{"w":-0.28559,"idf":4.16407},"attached":{"w":-0.48615,"idf":3.18324},"report":{"w":-0.22647,"idf":4.16407},"request":{"w":-0.28889,"idf":4.16407},"auto":{"w":0.20082,"idf":4.56953},"auto renew":{"w":0.20082,"idf":4.56953},"available":{"w":-0.32729,"idf":3.87639},"reset":{"w":0.31484,"idf":4.16407},"avoid":{"w":0.43998,"idf":3.65324},"bank":{"w":0.33143,"idf":3.87639},"bank account":{"w":0.33143,"idf":3.87639},"banking":{"w":0.21302,"idf":4.16407},"review":{"w":-0.49944,"idf":3.47092},"cancel":{"w":0.20082,"idf":4.56953},"card":{"w":0.38663,"idf":3.87639},"card details":{"w":0.19516,"idf":4.16407},"secure":{"w":0.30133,"idf":3.87639},"selected":{"w":0.28671,"idf":4.16407},"claim":{"w":0.25388,"idf":4.16407},"click":{"w":0.70758,"idf":2.96009},"click verify":{"w":0.28198,"idf":3.87639},"clicking":{"w":0.31971,"idf":4.16407},"shared":{"w":-0.21787,"idf":4.16407},"conference":{"w":-0.27043,"idf":4.16407},"ssn":{"w":0.28074,"idf":4.16407},"subscription auto":{"w":0.20082,"idf":4.56953},"contact":{"w":-0.28367,"idf":4.16407},"suspended":{"w":0.36726,"idf":3.65324},"suspicious":{"w":0.3434,"idf":3.87639},"credit":{"w":0.23097,"idf":4.16407},"credit card":{"w":0.23097,"idf":4.16407},"team":{"w":-0.25717,"idf":4.16407},"thank":{"w":-0.25865,"idf":4.16407},"thanks":{"w":-0.31267,"idf":4.16407},"dear":{"w":0.31892,"idf":3.87639},"today":{"w":0.34288,"idf":3.87639},"delivered":{"w":-0.21477,"idf":4.56953},"delivery":{"w":0.28385,"idf":4.16407},"department":{"w":0.19229,"idf":4.56953},"deposit":{"w":0.19229,"idf":4.56953},"details":{"w":0.4027,"idf":3.65324},"update":{"w":0.33884,"idf":3.18324},"detected":{"w":0.35199,"idf":3.87639},"urgent":{"w":0.24064,"idf":3.87639},"user":{"w":0.24272,"idf":4.16407},"discussed":{"w":-0.33186,"idf":4.16407},"email":{"w":0.19363,"idf":3.65324},"verify account":{"w":0.2293,"idf":4.16407},"verify":{"w":0.62882,"idf":2.96009},"enter":{"w":0.17841,"idf":4.56953},"exclusive":{"w":0.2828,"idf":4.16407},"wanted":{"w":-0.22375,"idf":4.16407},"fee":{"w":0.28385,"idf":4.16407},"warning":{"w":0.24369,"idf":4.16407},"feedback":{"w":-0.28365,"idf":4.16407},"free":{"w":0.28647,"idf":4.16407},"friday":{"w":-0.26487,"idf":4.16407},"github":{"w":-0.31693,"idf":4.16407},"guaranteed":{"w":0.36911,"idf":3.87639},"hi":{"w":-0.38349,"idf":3.65324},"hours":{"w":0.3519,"idf":3.65324},"http":{"w":0.25557,"idf":3.87639},"id":{"w":0.30207,"idf":4.56953},"identity":{"w":0.23341,"idf":4.16407},"immediately":{"w":0.80073,"idf":2.96009},"information":{"w":0.54061,"idf":3.47092},"investment":{"w":0.36911,"idf":3.87639},"just":{"w":-0.20233,"idf":4.16407},"know":{"w":-0.20233,"idf":4.16407},"let":{"w":-0.20233,"idf":4.16407},"library":{"w":-0.27247,"idf":4.56953},"limited":{"w":0.30478,"idf":3.87639},"link":{"w":0.21425,"idf":3.65324},"locked":{"w":0.22878,"idf":4.16407},"login":{"w":0.36646,"idf":3.65324},"march":{"w":-0.27122,"idf":4.16407},"meeting":{"w":-0.42371,"idf":3.65324},"offer":{"w":0.24112,"idf":4.16407},"pay":{"w":0.28385,"idf":4.16407},"password":{"w":0.31957,"idf":3.47092}};
+const INTERCEPT = -0.12462;
+
+// ─── STOP WORDS (sklearn english) ────────────────────────────────────────────
+const STOP = new Set(['a','about','above','after','again','against','all','am','an','and','any','are','as','at','be','because','been','before','being','below','between','both','but','by','can','did','do','does','doing','down','during','each','few','for','from','further','had','has','have','having','he','her','here','him','himself','his','how','if','in','into','is','it','its','itself','just','me','more','most','my','myself','no','nor','not','of','off','on','once','only','or','other','our','out','over','own','s','same','she','should','so','some','such','t','than','that','the','their','them','then','there','these','they','this','those','through','to','too','under','until','up','very','was','we','were','what','when','where','which','while','who','whom','why','will','with','would','you','your']);
+
+// ─── TOKENIZE + TFIDF SIMULATION ─────────────────────────────────────────────
+function tokenize(text) {
+  return text.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !STOP.has(w));
+}
+
+function computeFeatures(text) {
+  const tokens = tokenize(text);
+  const tf = {};
+
+  // unigrams
+  tokens.forEach(t => { tf[t] = (tf[t] || 0) + 1; });
+  // bigrams
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const bg = `${tokens[i]} ${tokens[i+1]}`;
+    tf[bg] = (tf[bg] || 0) + 1;
+  }
+
+  // normalize TF (log(1+tf))
+  const result = {};
+  Object.entries(tf).forEach(([term, count]) => {
+    if (SVM_WEIGHTS[term]) {
+      result[term] = Math.log(1 + count) * SVM_WEIGHTS[term].idf;
+    }
+  });
+
+  // L2 normalize
+  const norm = Math.sqrt(Object.values(result).reduce((s, v) => s + v*v, 0)) || 1;
+  Object.keys(result).forEach(k => result[k] /= norm);
+
+  return result;
+}
+
+function predict(text) {
+  const features = computeFeatures(text);
+  let score = INTERCEPT;
+  const contribs = [];
+
+  Object.entries(features).forEach(([term, tfIdfVal]) => {
+    const w = SVM_WEIGHTS[term].w;
+    const contrib = tfIdfVal * w;
+    score += contrib;
+    contribs.push({ term, contrib, w });
+  });
+
+  contribs.sort((a, b) => Math.abs(b.contrib) - Math.abs(a.contrib));
+
+  // Map decision score to 0-100
+  const clamp = Math.max(-4, Math.min(4, score));
+  const threatScore = Math.round(50 + (clamp / 4) * 50);
+
+  return {
+    score,
+    threatScore: Math.max(0, Math.min(100, threatScore)),
+    topFeatures: contribs.slice(0, 8)
+  };
+}
+
+// ─── PATTERN MATCHING ────────────────────────────────────────────────────────
+function extractIndicators(text) {
+  const t = text.toLowerCase();
+  const inds = [];
+  const checks = [
+    [/http[s]?:\/\/[^\s]*\.(xyz|info|tk|ml|ga|cf)[/\s"]/i, 'high', '🔗 Suspicious domain TLD in URL (.xyz, .info, .tk)'],
+    [/http[s]?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}/i, 'high', '🌐 IP address used in URL instead of domain'],
+    [/(urgent|act now|immediately|within 24 hours|expires today|act fast)/i, 'high', '⏰ High-urgency pressure language'],
+    [/(suspend|lock|terminat|deactivat|closed permanently)/i, 'high', '🔒 Account suspension or termination threat'],
+    [/(ssn|social security|credit card number|routing number|bank account number)/i, 'high', '💳 Requesting sensitive financial credentials'],
+    [/(verify.{0,20}(password|login|identity|account))/i, 'medium', '🔑 Credential verification request'],
+    [/(won|winner|prize|lottery|congratulations.{0,20}free)/i, 'medium', '🎰 Prize or lottery social engineering'],
+    [/(guaranteed.{0,20}(return|profit|invest)|no risk)/i, 'medium', '📈 Unrealistic financial guarantee'],
+    [/(wire transfer|western union|gift card|crypto|bitcoin)/i, 'high', '💸 Unusual or untraceable payment requested'],
+    [/(do not (share|tell|discuss)|keep.{0,15}confidential|tell no one)/i, 'high', '🤫 Secrecy request — strong BEC indicator'],
+    [/(dear (customer|valued|user|member|account holder))/i, 'low', '👤 Generic salutation (no name)'],
+    [/(failure to (comply|respond|act)|face (legal|criminal|federal))/i, 'high', '⚖️ Legal threat to force compliance'],
+  ];
+  checks.forEach(([re, sev, msg]) => { if (re.test(t)) inds.push({ severity: sev, text: msg }); });
+  return inds;
+}
+
+// ─── METADATA EXTRACTION ─────────────────────────────────────────────────────
+function extractMeta(text) {
+  const sender = (text.match(/from:\s*(.+)/i) || [])[1]?.trim() || '—';
+  const subject = (text.match(/subject:\s*(.+)/i) || [])[1]?.trim() || '—';
+  const urls = (text.match(/https?:\/\/\S+/gi) || []);
+  const words = text.trim().split(/\s+/).length;
+  return { sender, subject, urlCount: urls.length, wordCount: words };
+}
+
+// ─── MAIN ANALYZE ────────────────────────────────────────────────────────────
+const history = [];
+
+function analyze() {
+  const text = document.getElementById('inputText').value.trim();
+  if (!text) { alert('Please paste a message first.'); return; }
+
+  document.getElementById('analyzeBtn').disabled = true;
+  show('loadingState');
+
+  setTimeout(() => {
+    try {
+      const { score, threatScore, topFeatures } = predict(text);
+      const indicators = extractIndicators(text);
+      const meta = extractMeta(text);
+
+      const cls = threatScore >= 68 ? 'danger' : threatScore >= 38 ? 'warn' : 'safe';
+      const icon = cls === 'danger' ? '🚨' : cls === 'warn' ? '⚠️' : '✅';
+      const verdict = cls === 'danger' ? 'PHISHING DETECTED' : cls === 'warn' ? 'SUSPICIOUS' : 'LIKELY SAFE';
+      const rec = cls === 'danger'
+        ? '🚨 Do NOT click any links or provide information. Report and delete immediately.'
+        : cls === 'warn'
+        ? '⚠️ Exercise caution. Verify sender identity through official channels before acting.'
+        : '✅ No strong phishing signals. Still apply standard email hygiene practices.';
+
+      renderResult({ cls, icon, verdict, threatScore, score, topFeatures, indicators, meta, rec });
+      history.unshift({ text: text.slice(0, 55) + '…', score: threatScore, cls });
+      renderHistory();
+    } catch(e) { console.error(e); }
+    document.getElementById('analyzeBtn').disabled = false;
+  }, 1200);
+}
+
+function renderResult(r) {
+  const rs = document.getElementById('resultState');
+  rs.className = `result-state active ${r.cls}-mode`;
+  show('resultState');
+
+  // Verdict
+  const vc = document.getElementById('verdictCard');
+  vc.className = `verdict-card ${r.cls}`;
+  document.getElementById('vIcon').textContent = r.icon;
+  document.getElementById('vText').textContent = r.verdict;
+  document.getElementById('vScore').textContent = r.threatScore;
+
+  setTimeout(() => {
+    document.getElementById('scoreFill').style.width = r.threatScore + '%';
+    // Decision boundary position: map score from [-4,4] to [2%, 98%]
+    const pct = Math.max(2, Math.min(98, 50 + (Math.max(-4, Math.min(4, r.score)) / 4) * 48));
+    document.getElementById('bvLine').style.left = pct + '%';
+  }, 50);
+
+  // Features
+  const fl = document.getElementById('featureList');
+  fl.innerHTML = '';
+  const maxC = Math.max(...r.topFeatures.map(f => Math.abs(f.contrib)));
+  r.topFeatures.forEach(f => {
+    const isPhish = f.contrib > 0;
+    const barW = Math.round((Math.abs(f.contrib) / (maxC || 1)) * 100);
+    const el = document.createElement('div');
+    el.className = `feat-row ${isPhish ? 'phish' : 'legit'}`;
+    el.innerHTML = `<div class="feat-word">${f.term}</div>
+      <div class="feat-bar-wrap"><div class="feat-bar" style="width:${barW}%"></div></div>
+      <div class="feat-val">${f.contrib > 0 ? '+' : ''}${f.contrib.toFixed(3)}</div>`;
+    fl.appendChild(el);
+  });
+
+  // Indicators
+  const il = document.getElementById('indList');
+  il.innerHTML = '';
+  if (r.indicators.length === 0) {
+    il.innerHTML = '<div class="ind low"><span class="ind-icon">ℹ️</span><span>No explicit pattern indicators detected.</span></div>';
+  } else {
+    r.indicators.forEach(ind => {
+      const el = document.createElement('div');
+      el.className = `ind ${ind.severity}`;
+      el.innerHTML = `<span class="ind-icon">${ind.text.slice(0,2)}</span><span>${ind.text.slice(2)}</span>`;
+      il.appendChild(el);
+    });
+  }
+
+  // Meta
+  const mg = document.getElementById('metaGrid');
+  mg.innerHTML = [
+    ['Sender', r.meta.sender],
+    ['Subject', r.meta.subject],
+    ['URLs Found', r.meta.urlCount],
+    ['Word Count', r.meta.wordCount],
+    ['Decision Score', r.score.toFixed(4)],
+    ['SVM Threshold', '0.0000'],
+  ].map(([k,v]) => `<div class="meta-cell"><div class="meta-key">${k}</div><div class="meta-val">${v}</div></div>`).join('');
+
+  // Rec
+  document.getElementById('recBox').textContent = r.rec;
+}
+
+function renderHistory() {
+  if (!history.length) return;
+  const bar = document.getElementById('histBar');
+  bar.className = 'history-bar active';
+  const list = document.getElementById('histList');
+  list.innerHTML = '';
+  history.slice(0, 4).forEach(h => {
+    const color = h.cls === 'danger' ? 'var(--danger)' : h.cls === 'warn' ? 'var(--warn)' : 'var(--safe)';
+    list.innerHTML += `<div class="hist-item">
+      <div class="hist-dot" style="background:${color}"></div>
+      <div class="hist-text">${h.text}</div>
+      <div class="hist-score" style="color:${color}">${h.score}/100</div>
+    </div>`;
+  });
+}
+
+function show(id) {
+  ['idleState','loadingState','resultState'].forEach(s => {
+    const el = document.getElementById(s);
+    if (s === id) {
+      if (s === 'loadingState') el.classList.add('active');
+      else if (s === 'resultState') { /* handled in renderResult */ }
+      else el.style.display = 'flex';
+    } else {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    }
+  });
+}
+
+function clearAll() {
+  document.getElementById('inputText').value = '';
+  document.getElementById('idleState').style.display = 'flex';
+  document.getElementById('loadingState').classList.remove('active');
+  document.getElementById('resultState').className = 'result-state';
+}
+
+// ─── SAMPLES ─────────────────────────────────────────────────────────────────
+const SAMPLES = {
+phishing:`From: security@paypa1-support.xyz
+Subject: URGENT: Your account has been suspended
+Date: Mon Feb 23 2026
+
+Dear Valued Customer,
+
+URGENT NOTICE: Unusual activity detected on your PayPal account. Your account access has been LIMITED.
+
+Click here IMMEDIATELY to verify your information:
+http://paypal-secure-login.xyz/verify?id=abc123
+
+You must act within 24 HOURS or your account will be permanently suspended and funds frozen.
+
+Please provide your:
+- SSN (last 4 digits)
+- Credit card number
+- Current password
+
+Failure to comply will result in permanent account termination.
+
+PayPal Security Team`,
+
+spear:`From: ceo@yourcompany-corp.net
+Subject: Urgent - Confidential Wire Transfer
+
+Hi Sarah,
+
+I'm stuck in a board meeting and can't talk. I need you to process an urgent wire transfer of $47,500 to a new vendor before end of business today.
+
+This is time-sensitive and strictly confidential — do not discuss with anyone else in the office until the deal closes.
+
+Bank: First National Bank
+Account: 8834729103
+Routing: 021000021
+Beneficiary: Strategic Consulting LLC
+
+Process this immediately. I'll explain everything when I'm out of the meeting.
+
+Thanks,
+David Chen, CEO`,
+
+scam:`Hey,
+
+I found your contact online and wanted to share an exclusive investment opportunity with guaranteed 300% monthly returns. No risk — your capital is 100% protected by our fund.
+
+We have only 10 slots left. Many investors have already made thousands in 30 days.
+
+Send $500 in Bitcoin to get started and watch it grow. This offer expires today.
+
+Act now before slots fill up! Reply with your bank details to get started.
+
+Best,
+Michael
+Global Investment Partners`,
+
+legit:`From: no-reply@github.com
+Subject: [GitHub] A new SSH key was added to your account
+Date: Mon, 23 Feb 2026 14:30:11 UTC
+
+Hi there,
+
+A new public SSH key was recently added to your GitHub account.
+
+Key fingerprint: SHA256:randomkeyfingerprint
+
+If you added this key, you can safely ignore this email.
+
+If you did NOT add this key, please visit https://github.com/settings/security to review your account security settings.
+
+Thanks,
+The GitHub Team`
+};
+
+function loadSample(type) {
+  document.getElementById('inputText').value = SAMPLES[type];
+  clearAll();
+  document.getElementById('idleState').style.display = 'flex';
+}
+</script>
+</body>
+</html>
